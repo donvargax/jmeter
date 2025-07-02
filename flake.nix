@@ -20,18 +20,18 @@
 
           nativeBuildInputs = with pkgs; [
             makeWrapper
-            openjdk17
+            openjdk21  # Match official JMeter which uses JDK 21
           ];
 
           buildInputs = with pkgs; [
-            openjdk17
+            openjdk21  # Match official JMeter which uses JDK 21
           ];
 
           # JMeter build process
           buildPhase = ''
             runHook preBuild
 
-            export JAVA_HOME=${pkgs.openjdk17}
+            export JAVA_HOME=${pkgs.openjdk21}
 
             echo "=== Building JMeter with Gradle ==="
             chmod +x gradlew
@@ -46,7 +46,7 @@
           installPhase = ''
             runHook preInstall
 
-            mkdir -p $out/{bin,share/jmeter}
+            mkdir -p $out
 
             echo "=== Looking for JMeter distribution ==="
             DIST_DIR="src/dist/build/distributions"
@@ -66,7 +66,15 @@
                 tar -xzf "$DIST_FILE"
                 JMETER_DIR=$(ls -d apache-jmeter-*/ | head -1)
                 echo "Extracted to: $JMETER_DIR"
-                cp -r "$JMETER_DIR"* $out/share/jmeter/
+
+                # Copy everything like official derivation
+                cd "$JMETER_DIR"
+
+                # Remove Windows scripts like official derivation
+                rm -f bin/*.bat bin/*.cmd
+
+                # Copy everything to output
+                cp -R * $out/
               else
                 echo "No distribution archive found in $DIST_DIR"
                 ls -la
@@ -79,25 +87,29 @@
               exit 1
             fi
 
-            # Verify JMeter was installed correctly
-            if [ ! -f "$out/share/jmeter/bin/ApacheJMeter.jar" ]; then
-              echo "ApacheJMeter.jar not found, checking what was installed:"
-              find $out/share/jmeter -name "*.jar" | head -10
-              exit 1
+            # Fix keytool path like official derivation
+            if [ -f "$out/bin/create-rmi-keystore.sh" ]; then
+              substituteInPlace $out/bin/create-rmi-keystore.sh --replace \
+                "keytool -genkey" \
+                "${pkgs.openjdk21}/bin/keytool -genkey"
             fi
 
-            # Create wrapper script
-            makeWrapper ${pkgs.openjdk17}/bin/java $out/bin/jmeter \
-              --add-flags "-jar $out/share/jmeter/bin/ApacheJMeter.jar" \
-              --set JAVA_HOME "${pkgs.openjdk17}" \
-              --set JMETER_HOME "$out/share/jmeter"
+            # Prefix scripts with jmeter like official derivation
+            for i in heapdump.sh mirror-server mirror-server.sh shutdown.sh stoptest.sh create-rmi-keystore.sh; do
+              if [ -f "$out/bin/$i" ]; then
+                mv $out/bin/$i $out/bin/jmeter-$i
+                wrapProgram $out/bin/jmeter-$i \
+                  --prefix PATH : "${pkgs.openjdk21}/bin"
+              fi
+            done
 
-            # Also create jmeter-server wrapper
-            makeWrapper ${pkgs.openjdk17}/bin/java $out/bin/jmeter-server \
-              --add-flags "-jar $out/share/jmeter/bin/ApacheJMeter.jar" \
-              --add-flags "-s" \
-              --set JAVA_HOME "${pkgs.openjdk17}" \
-              --set JMETER_HOME "$out/share/jmeter"
+            # Wrap main jmeter scripts like official derivation
+            if [ -f "$out/bin/jmeter" ]; then
+              wrapProgram $out/bin/jmeter --set JAVA_HOME "${pkgs.openjdk21}"
+            fi
+            if [ -f "$out/bin/jmeter.sh" ]; then
+              wrapProgram $out/bin/jmeter.sh --set JAVA_HOME "${pkgs.openjdk21}"
+            fi
 
             runHook postInstall
           '';
@@ -132,15 +144,14 @@
 
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
-            openjdk17
-            ant
+            openjdk21  # Match official JMeter
             gradle
           ];
 
           shellHook = ''
             echo "JMeter development environment"
             echo "Java: $(java -version 2>&1 | head -n1)"
-            echo "Ant: $(ant -version | head -n1)"
+            echo "Gradle: $(gradle --version | head -n1)"
           '';
         };
       });
