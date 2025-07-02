@@ -33,12 +33,19 @@
 
             export JAVA_HOME=${pkgs.openjdk21}
 
+            # Set up writable directories for Gradle
+            export GRADLE_USER_HOME=$TMPDIR/gradle
+            export GRADLE_HOME=$GRADLE_USER_HOME
+            mkdir -p $GRADLE_USER_HOME
+
             echo "=== Building JMeter with Gradle ==="
             chmod +x gradlew
-            ./gradlew build --no-daemon --no-build-cache -Djava.awt.headless=true
+            ./gradlew build --no-daemon --no-build-cache -Djava.awt.headless=true \
+              --gradle-user-home=$GRADLE_USER_HOME
 
             echo "=== Creating distribution ==="
-            ./gradlew createDist --no-daemon --no-build-cache
+            ./gradlew createDist --no-daemon --no-build-cache \
+              --gradle-user-home=$GRADLE_USER_HOME
 
             runHook postBuild
           '';
