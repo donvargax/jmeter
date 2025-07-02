@@ -16,7 +16,16 @@
           pname = "jmeter";
           version = "master-${self.shortRev or "dirty"}";
 
-          src = self;
+          # Filter out flake.nix and other Nix-specific files from source
+          src = pkgs.lib.cleanSourceWith {
+            src = self;
+            filter = path: type:
+              let baseName = baseNameOf path; in
+              !(pkgs.lib.hasSuffix ".nix" baseName) &&
+              !(baseName == "result") &&
+              !(baseName == ".git") &&
+              !(baseName == ".gitignore");
+          };
 
           nativeBuildInputs = with pkgs; [
             makeWrapper
@@ -59,7 +68,6 @@
             runHook preInstall
 
             mkdir -p $out
-
             echo "=== Looking for JMeter distribution ==="
             DIST_DIR="src/dist/build/distributions"
 
