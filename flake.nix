@@ -20,7 +20,8 @@
 
           nativeBuildInputs = with pkgs; [
             makeWrapper
-            openjdk21  # Match official JMeter which uses JDK 21
+            openjdk17  # For building (required by JMeter's build process)
+            openjdk21  # For runtime (to match official package)
           ];
 
           buildInputs = with pkgs; [
@@ -31,14 +32,16 @@
           buildPhase = ''
             runHook preBuild
 
-            export JAVA_HOME=${pkgs.openjdk21}
+            # Use JDK 17 for building (required by JMeter's build system)
+            export JAVA_HOME=${pkgs.openjdk17}
+            export PATH=${pkgs.openjdk17}/bin:$PATH
 
             # Set up writable directories for Gradle
             export GRADLE_USER_HOME=$TMPDIR/gradle
             export GRADLE_HOME=$GRADLE_USER_HOME
             mkdir -p $GRADLE_USER_HOME
 
-            echo "=== Building JMeter with Gradle ==="
+            echo "=== Building JMeter with Gradle (using JDK 17) ==="
             chmod +x gradlew
             ./gradlew build --no-daemon --no-build-cache -Djava.awt.headless=true \
               --gradle-user-home=$GRADLE_USER_HOME
