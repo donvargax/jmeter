@@ -11,6 +11,12 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
+        # Pre-download Gradle 8.9 to Nix store
+        gradle-8-9 = pkgs.fetchurl {
+          url = "https://services.gradle.org/distributions/gradle-8.9-bin.zip";
+          hash = "sha256-jvCWy8lIdl4CUJTP7cNP6d5rTHNrqpLp7a8rlVZpUV0=";
+        };
+
         # Build JMeter from source using the existing nixpkgs pattern
         jmeter-from-source = pkgs.stdenv.mkDerivation rec {
           pname = "jmeter";
@@ -31,11 +37,12 @@
             makeWrapper
             openjdk17  # For building (required by JMeter's build process)
             openjdk21  # For runtime (to match official package)
-            gradle     # Use nixpkgs gradle instead of gradlew
+            unzip      # For extracting cached Gradle
           ];
 
           buildInputs = with pkgs; [
             openjdk21  # Match official JMeter which uses JDK 21
+            gradle     # Keep for dev shell compatibility
           ];
 
           # JMeter build process
@@ -51,13 +58,24 @@
             export GRADLE_HOME=$GRADLE_USER_HOME
             mkdir -p $GRADLE_USER_HOME
 
+            # Pre-cache Gradle wrapper to avoid repeated downloads
+            echo "=== Setting up cached Gradle wrapper ==="
+            chmod +x gradlew
+
+            # Set up gradle wrapper to use our pre-downloaded zip
+            mkdir -p $GRADLE_USER_HOME/wrapper/dists/gradle-8.9-bin/90cnw93cvbtalezasaz0blq0a
+            cp ${gradle-8-9} $GRADLE_USER_HOME/wrapper/dists/gradle-8.9-bin/90cnw93cvbtalezasaz0blq0a/gradle-8.9-bin.zip
+            cd $GRADLE_USER_HOME/wrapper/dists/gradle-8.9-bin/90cnw93cvbtalezasaz0blq0a
+            unzip -q gradle-8.9-bin.zip
+            echo "ok" > gradle-8.9-bin.zip.ok
+            cd -
+
             echo "=== Building JMeter with Gradle (using JDK 17) ==="
-            # Use nixpkgs gradle instead of gradlew to avoid downloads
-            gradle build --no-daemon --no-build-cache -Djava.awt.headless=true \
+            ./gradlew build --no-daemon --no-build-cache -Djava.awt.headless=true \
               --gradle-user-home=$GRADLE_USER_HOME
 
             echo "=== Creating distribution ==="
-            gradle createDist --no-daemon --no-build-cache \
+            ./gradlew createDist --no-daemon --no-build-cache \
               --gradle-user-home=$GRADLE_USER_HOME
 
             runHook postBuild
