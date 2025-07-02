@@ -14,7 +14,7 @@
         # Pre-download Gradle 8.9 to Nix store
         gradle-8-9 = pkgs.fetchurl {
           url = "https://services.gradle.org/distributions/gradle-8.9-bin.zip";
-          hash = "sha256-jvCWy8lIdl4CUJTP7cNP6d5rTHNrqpLp7a8rlVZpUV0=";
+          hash = "sha256-1yXXB7+r1N/clYxiQAOzyArMwD9wN7USLEsdDvFc7Ks=";
         };
 
         # Build JMeter from source using the existing nixpkgs pattern
