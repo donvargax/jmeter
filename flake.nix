@@ -20,7 +20,6 @@
 
           nativeBuildInputs = with pkgs; [
             makeWrapper
-            ant
             openjdk17
           ];
 
@@ -33,11 +32,13 @@
             runHook preBuild
 
             export JAVA_HOME=${pkgs.openjdk17}
-            export ANT_HOME=${pkgs.ant}
 
-            # Download dependencies and build
-            ant download_jars
-            ant
+            echo "=== Building JMeter with Gradle ==="
+            chmod +x gradlew
+            ./gradlew build --no-daemon --no-build-cache -Djava.awt.headless=true
+
+            echo "=== Creating distribution ==="
+            ./gradlew createDist --no-daemon --no-build-cache
 
             runHook postBuild
           '';
@@ -45,17 +46,45 @@
           installPhase = ''
             runHook preInstall
 
-            mkdir -p $out/{bin,lib,share/jmeter}
+            mkdir -p $out/{bin,share/jmeter}
 
-            # Copy the built JMeter
-            cp -r bin/ $out/share/jmeter/
-            cp -r lib/ $out/share/jmeter/
-            cp -r extras/ $out/share/jmeter/
-            cp -r docs/ $out/share/jmeter/
-            cp -r printable_docs/ $out/share/jmeter/ || true
-            cp -r licenses/ $out/share/jmeter/
-            cp LICENSE $out/share/jmeter/
-            cp README.md $out/share/jmeter/
+            echo "=== Looking for JMeter distribution ==="
+            DIST_DIR="src/dist/build/distributions"
+
+            if [ -d "$DIST_DIR" ]; then
+              echo "Found distribution directory: $DIST_DIR"
+              cd $DIST_DIR
+
+              # Look for the distribution archive
+              DIST_FILE=$(ls apache-jmeter-*.tgz 2>/dev/null | head -1)
+              if [ -z "$DIST_FILE" ]; then
+                DIST_FILE=$(ls apache-jmeter-*.tar.gz 2>/dev/null | head -1)
+              fi
+
+              if [ -n "$DIST_FILE" ]; then
+                echo "Found distribution: $DIST_FILE"
+                tar -xzf "$DIST_FILE"
+                JMETER_DIR=$(ls -d apache-jmeter-*/ | head -1)
+                echo "Extracted to: $JMETER_DIR"
+                cp -r "$JMETER_DIR"* $out/share/jmeter/
+              else
+                echo "No distribution archive found in $DIST_DIR"
+                ls -la
+                exit 1
+              fi
+            else
+              echo "Distribution directory not found: $DIST_DIR"
+              echo "Available directories in src/dist/build:"
+              ls -la src/dist/build/ || echo "src/dist/build/ not found"
+              exit 1
+            fi
+
+            # Verify JMeter was installed correctly
+            if [ ! -f "$out/share/jmeter/bin/ApacheJMeter.jar" ]; then
+              echo "ApacheJMeter.jar not found, checking what was installed:"
+              find $out/share/jmeter -name "*.jar" | head -10
+              exit 1
+            fi
 
             # Create wrapper script
             makeWrapper ${pkgs.openjdk17}/bin/java $out/bin/jmeter \
