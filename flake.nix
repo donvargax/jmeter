@@ -31,6 +31,7 @@
             makeWrapper
             openjdk17  # For building (required by JMeter's build process)
             openjdk21  # For runtime (to match official package)
+            gradle     # Use nixpkgs gradle instead of gradlew
           ];
 
           buildInputs = with pkgs; [
@@ -51,15 +52,13 @@
             mkdir -p $GRADLE_USER_HOME
 
             echo "=== Building JMeter with Gradle (using JDK 17) ==="
-            chmod +x gradlew
-            ./gradlew build --no-daemon --no-build-cache -Djava.awt.headless=true \
-              --gradle-user-home=$GRADLE_USER_HOME \
-              -x rat
+            # Use nixpkgs gradle instead of gradlew to avoid downloads
+            gradle build --no-daemon --no-build-cache -Djava.awt.headless=true \
+              --gradle-user-home=$GRADLE_USER_HOME
 
             echo "=== Creating distribution ==="
-            ./gradlew createDist --no-daemon --no-build-cache \
-              --gradle-user-home=$GRADLE_USER_HOME \
-              -x rat
+            gradle createDist --no-daemon --no-build-cache \
+              --gradle-user-home=$GRADLE_USER_HOME
 
             runHook postBuild
           '';
@@ -68,6 +67,7 @@
             runHook preInstall
 
             mkdir -p $out
+
             echo "=== Looking for JMeter distribution ==="
             DIST_DIR="src/dist/build/distributions"
 
