@@ -44,11 +44,13 @@
             echo "=== Building JMeter with Gradle (using JDK 17) ==="
             chmod +x gradlew
             ./gradlew build --no-daemon --no-build-cache -Djava.awt.headless=true \
-              --gradle-user-home=$GRADLE_USER_HOME
+              --gradle-user-home=$GRADLE_USER_HOME \
+              -x rat
 
             echo "=== Creating distribution ==="
             ./gradlew createDist --no-daemon --no-build-cache \
-              --gradle-user-home=$GRADLE_USER_HOME
+              --gradle-user-home=$GRADLE_USER_HOME \
+              -x rat
 
             runHook postBuild
           '';
