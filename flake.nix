@@ -66,11 +66,10 @@
             cd -
 
             echo "=== Following official JMeter build instructions ==="
-            echo "Building JMeter with: ./gradlew createDist -Djava.awt.headless=true"
+            echo "Building JMeter with: ./gradlew createDist"
 
             # Follow the official instructions exactly:
             # ./gradlew createDist
-            # with headless flag since we're in a build environment
             ./gradlew createDist \
               -Djava.awt.headless=true \
               --no-daemon \
@@ -78,7 +77,6 @@
               --stacktrace
 
             echo "=== Build completed successfully ==="
-
             runHook postBuild
           '';
 
@@ -87,122 +85,42 @@
 
             mkdir -p $out
 
-            echo "=== Installing JMeter from build output ==="
+            echo "=== Installing JMeter from official createDist output ==="
 
-            # The createDist task completed successfully, but let's find where the artifacts are
-            echo "Looking for distribution directories and files..."
+            # According to official docs, createDist copies all dependencies to lib/
+            # and sets up the complete JMeter installation in the current directory
 
-            # Check multiple possible locations
-            DIST_DIR=""
-            for potential_dir in "src/dist/build/distributions" "build/distributions" "src/dist/build" "build"; do
-              if [ -d "$potential_dir" ]; then
-                echo "Found directory: $potential_dir"
-                ls -la "$potential_dir"
+            # The createDist task creates a complete JMeter installation structure
+            # in the source directory itself, as mentioned in the official docs:
+            # "The following command would compile the application and enable you to
+            # run jmeter from the bin directory"
 
-                # Look for distribution files in this directory
-                if ls "$potential_dir"/*jmeter*.{tgz,tar.gz,zip} 2>/dev/null; then
-                  DIST_DIR="$potential_dir"
-                  echo "Found distribution files in: $DIST_DIR"
-                  break
-                fi
-              fi
-            done
-
-            # If no distribution found, look for the built library structure
-            if [ -z "$DIST_DIR" ]; then
-              echo "No distribution archive found. Looking for direct build output..."
-
-              # Check if we have built JARs and can construct JMeter manually
-              JAR_COUNT=$(find . -name "*.jar" -path "*/build/libs/*" | wc -l)
-              echo "Found $JAR_COUNT built JAR files"
-
-              if [ "$JAR_COUNT" -gt 5 ]; then
-                echo "Sufficient JARs found. Installing JMeter manually from build output..."
-
-                # Create JMeter directory structure
-                mkdir -p $out/{bin,lib,lib/ext}
-
-                # Copy all built JARs
-                find . -name "*.jar" -path "*/build/libs/*" -exec cp {} $out/lib/ \;
-
-                # Copy essential files from source if they exist
-                if [ -d "bin" ]; then
-                  cp -r bin/* $out/bin/ 2>/dev/null || true
-                  rm -f $out/bin/*.bat $out/bin/*.cmd 2>/dev/null || true
-                fi
-
-                if [ -d "lib" ]; then
-                  cp -r lib/* $out/lib/ 2>/dev/null || true
-                fi
-
-                # Create basic jmeter startup script if none exists
-                if [ ! -f "$out/bin/jmeter" ] && [ ! -f "$out/bin/jmeter.sh" ]; then
-                  echo "Creating basic jmeter script"
-                  cat > $out/bin/jmeter << 'EOF'
-#!/bin/bash
-JMETER_HOME="$(dirname "$(dirname "$(readlink -f "$0")")")"
-CLASSPATH="$JMETER_HOME/lib/*:$JMETER_HOME/lib/ext/*"
-exec java -cp "$CLASSPATH" org.apache.jmeter.NewDriver "$@"
-EOF
-                  chmod +x $out/bin/jmeter
-                fi
-
-                echo "Manual installation completed"
-              else
-                echo "ERROR: Insufficient JAR files found. Build may have failed."
-                echo "Available JARs:"
-                find . -name "*.jar" | head -10
-                exit 1
-              fi
-            fi
-
-            cd "$DIST_DIR"
-            echo "Found distribution directory with files:"
-            ls -la
-
-            # Look for distribution archive
-            DIST_FILE=""
-            for ext in tgz tar.gz zip; do
-              DIST_FILE=$(ls apache-jmeter-*.$ext 2>/dev/null | head -1)
-              if [ -n "$DIST_FILE" ]; then
-                echo "Found distribution file: $DIST_FILE"
-                break
-              fi
-            done
-
-            if [ -z "$DIST_FILE" ]; then
-              echo "ERROR: No distribution archive found"
-              echo "Available files:"
+            # Check if we have the expected JMeter structure
+            if [ ! -d "bin" ] || [ ! -d "lib" ]; then
+              echo "ERROR: Expected bin/ and lib/ directories not found after createDist"
+              echo "Available directories:"
               ls -la
               exit 1
             fi
 
-            # Extract distribution
-            case "$DIST_FILE" in
-              *.tar.gz|*.tgz)
-                tar -xzf "$DIST_FILE"
-                ;;
-              *.zip)
-                unzip -q "$DIST_FILE"
-                ;;
-            esac
+            echo "Found JMeter installation structure:"
+            echo "Bin directory contents:"
+            ls -la bin/
+            echo "Lib directory contents (first 10):"
+            ls lib/ | head -10
 
-            # Find extracted directory
-            JMETER_DIR=$(ls -d apache-jmeter-*/ 2>/dev/null | head -1)
-            if [ -z "$JMETER_DIR" ]; then
-              echo "ERROR: Could not find extracted JMeter directory"
-              ls -la
-              exit 1
-            fi
+            # Copy the complete JMeter installation
+            cp -R bin lib $out/
 
-            echo "Installing from: $JMETER_DIR"
-            cd "$JMETER_DIR"
+            # Copy other directories if they exist
+            for dir in docs extras licenses printable_docs; do
+              if [ -d "$dir" ]; then
+                cp -R "$dir" $out/
+              fi
+            done
 
-            # Remove Windows scripts (following nixpkgs jmeter pattern)
-            rm -f bin/*.bat bin/*.cmd
-
-            # Copy everything to output
-            cp -R * $out/
+            # Remove Windows scripts
+            rm -f $out/bin/*.bat $out/bin/*.cmd
 
             # Fix keytool path for create-rmi-keystore.sh if it exists
             if [ -f "$out/bin/create-rmi-keystore.sh" ]; then
@@ -269,7 +187,6 @@ EOF
           buildInputs = with pkgs; [
             openjdk17  # Build JDK
             openjdk21  # Runtime JDK
-            gradle
           ];
 
           shellHook = ''
@@ -280,6 +197,7 @@ EOF
             echo "Official build commands:"
             echo "  ./gradlew build                    # Build and test"
             echo "  ./gradlew createDist               # Create distribution"
+            echo "  ./gradlew runGui                   # Build and start GUI"
             echo "  ./gradlew build -Djava.awt.headless=true  # Headless build"
           '';
         };
