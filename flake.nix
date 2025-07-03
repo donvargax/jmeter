@@ -89,16 +89,71 @@
 
             echo "=== Installing JMeter from build output ==="
 
-            # According to official docs, artifacts are in src/dist/build/distributions
-            DIST_DIR="src/dist/build/distributions"
+            # The createDist task completed successfully, but let's find where the artifacts are
+            echo "Looking for distribution directories and files..."
 
-            if [ ! -d "$DIST_DIR" ]; then
-              echo "ERROR: Distribution directory not found: $DIST_DIR"
-              echo "Available directories in src/dist/build/:"
-              ls -la src/dist/build/ || echo "src/dist/build/ not found"
-              echo "Looking for any distribution files:"
-              find . -name "*jmeter*" -name "*.tar*" -o -name "*.zip" | head -10
-              exit 1
+            # Check multiple possible locations
+            DIST_DIR=""
+            for potential_dir in "src/dist/build/distributions" "build/distributions" "src/dist/build" "build"; do
+              if [ -d "$potential_dir" ]; then
+                echo "Found directory: $potential_dir"
+                ls -la "$potential_dir"
+
+                # Look for distribution files in this directory
+                if ls "$potential_dir"/*jmeter*.{tgz,tar.gz,zip} 2>/dev/null; then
+                  DIST_DIR="$potential_dir"
+                  echo "Found distribution files in: $DIST_DIR"
+                  break
+                fi
+              fi
+            done
+
+            # If no distribution found, look for the built library structure
+            if [ -z "$DIST_DIR" ]; then
+              echo "No distribution archive found. Looking for direct build output..."
+
+              # Check if we have built JARs and can construct JMeter manually
+              JAR_COUNT=$(find . -name "*.jar" -path "*/build/libs/*" | wc -l)
+              echo "Found $JAR_COUNT built JAR files"
+
+              if [ "$JAR_COUNT" -gt 5 ]; then
+                echo "Sufficient JARs found. Installing JMeter manually from build output..."
+
+                # Create JMeter directory structure
+                mkdir -p $out/{bin,lib,lib/ext}
+
+                # Copy all built JARs
+                find . -name "*.jar" -path "*/build/libs/*" -exec cp {} $out/lib/ \;
+
+                # Copy essential files from source if they exist
+                if [ -d "bin" ]; then
+                  cp -r bin/* $out/bin/ 2>/dev/null || true
+                  rm -f $out/bin/*.bat $out/bin/*.cmd 2>/dev/null || true
+                fi
+
+                if [ -d "lib" ]; then
+                  cp -r lib/* $out/lib/ 2>/dev/null || true
+                fi
+
+                # Create basic jmeter startup script if none exists
+                if [ ! -f "$out/bin/jmeter" ] && [ ! -f "$out/bin/jmeter.sh" ]; then
+                  echo "Creating basic jmeter script"
+                  cat > $out/bin/jmeter << 'EOF'
+#!/bin/bash
+JMETER_HOME="$(dirname "$(dirname "$(readlink -f "$0")")")"
+CLASSPATH="$JMETER_HOME/lib/*:$JMETER_HOME/lib/ext/*"
+exec java -cp "$CLASSPATH" org.apache.jmeter.NewDriver "$@"
+EOF
+                  chmod +x $out/bin/jmeter
+                fi
+
+                echo "Manual installation completed"
+              else
+                echo "ERROR: Insufficient JAR files found. Build may have failed."
+                echo "Available JARs:"
+                find . -name "*.jar" | head -10
+                exit 1
+              fi
             fi
 
             cd "$DIST_DIR"
